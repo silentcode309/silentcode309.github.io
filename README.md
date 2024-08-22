@@ -1,3 +1,5 @@
+⚠WARNING:Dis app B broken⚠
+
 ## How to use
 
 1. Install all the node packages by executing :
