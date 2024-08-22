@@ -1,5 +1,3 @@
-## NO LANGUAGE OF ANY KIND PLEASE!!!
-
 ## How to use
 
 1. Install all the node packages by executing :
