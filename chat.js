@@ -1,7 +1,7 @@
 
 $(function(){
    	//make connection
-	var socket = io.connect('http://localhost:3000')
+	var socket = io.connect('https://silentcode309.github.io/')
 
 	//buttons and inputs
 	var message = $("#message")
