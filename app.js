@@ -2,7 +2,7 @@ const express = require('express')
 const app = express()
 
 // Listen on port 3000
-server = app.listen(3000)
+server = app.listen(https://silentcode309.github.io/)
 
 // Configuring Socket
 const io = require("socket.io")(server)
