@@ -146,7 +146,15 @@
        ADMIN: UPLOAD VAULT
        ====================== */
 
-    window.uploadVault = async () => {
+    window.startVaultUpload = () => {
+      const input = document.getElementById("vaultFileInput");
+      input.value = "";
+      input.click();
+    };
+
+    document.getElementById("vaultFileInput").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+
       const name = prompt("Vault name");
       const desc = prompt("Description");
       const flag = prompt("Flag");
@@ -154,38 +162,29 @@
 
       if (!name || !flag || !reward) return;
 
-      const fileInput = document.createElement("input");
-      fileInput.type = "file";
+      let fileURL = null;
+      if (file) {
+        const fileRef = ref(storage, `vaults/${name}/${file.name}`);
+        await uploadBytes(fileRef, file);
+        fileURL = await getDownloadURL(fileRef);
+      }
 
-      fileInput.onchange = async () => {
-        const file = fileInput.files[0];
-        let fileURL = null;
+      const flagHash = await sha256(flag);
 
-        if (file) {
-          const fileRef = ref(storage, `vaults/${name}/${file.name}`);
-          await uploadBytes(fileRef, file);
-          fileURL = await getDownloadURL(fileRef);
-        }
+      await setDoc(doc(db, "vaults", name), {
+        name,
+        desc,
+        flagHash,
+        reward,
+        fileURL
+      });
 
-        const flagHash = await sha256(flag);
+      userData.uploaded = true;
+      await updateDoc(doc(db, "users", currentUser.uid), { uploaded: true });
 
-        await setDoc(doc(db, "vaults", name), {
-          name,
-          desc,
-          flagHash,
-          reward,
-          fileURL
-        });
-
-        userData.uploaded = true;
-        await updateDoc(doc(db, "users", currentUser.uid), { uploaded: true });
-
-        await loadVaults();
-        renderVaults();
-      };
-
-      fileInput.click();
-    };
+      await loadVaults();
+      renderVaults();
+    });
 
     /* ======================
        LEADERBOARD
@@ -245,7 +244,8 @@
   <main>
     <aside>
       <h3>Admin</h3>
-      <button onclick="uploadVault()">Upload Vault</button>
+      <button onclick="startVaultUpload()">Upload Vault</button>
+      <input id="vaultFileInput" type="file" style="display:none" />
       <p class="muted">Upload at least one vault to unlock gameplay.</p>
     </aside>
 
