@@ -13,6 +13,7 @@
     /* ======================
        FIREBASE CONFIG
        ====================== */
+
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
   const firebaseConfig = {
     apiKey: "AIzaSyDg3D0E_-jroFn979TlCLSrgcGpP_887BQ",
@@ -32,7 +33,7 @@
        STATE
        ====================== */
 
-    let vaults = JSON.parse(localStorage.getItem("vaults") || "[]");
+    let vaults = [];
     let currentUser = null;
     let userData = null;
 
@@ -96,45 +97,25 @@
       logoutBtn.style.display = "inline-block";
       authStatus.textContent = user.displayName;
 
-      const snap = await getDoc(doc(db, "users", user.uid));
-      userData = snap.data();
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      userData = userSnap.data();
 
       document.getElementById("gold").textContent = userData.gold;
       document.getElementById("cracked").textContent = userData.cracked;
 
+      await loadVaults();
       renderVaults();
       loadLeaderboard();
     });
 
     /* ======================
-       VAULT LOGIC
+       VAULT LOGIC (PERSISTENT)
        ====================== */
 
-    function renderVaults() {
-      vaultContainer.innerHTML = "";
-
-      if (!userData.uploaded) {
-        vaultContainer.innerHTML = "<p class='muted'>You must upload at least one vault before playing.</p>";
-        return;
-      }
-
-      vaults.forEach((v, i) => {
-        const solved = userData.solves[v.name];
-
-        const el = document.createElement("div");
-        el.className = "vault";
-        el.innerHTML = `
-          <h3>${v.name}</h3>
-          <p>${v.desc}</p>
-          <button ${solved ? "disabled" : ""}>${solved ? "Solved" : "Infiltrate"}</button>
-        `;
-
-        if (!solved) {
-          el.querySelector("button").onclick = () => attemptVault(i);
-        }
-
-        vaultContainer.appendChild(el);
-      });
+    async function loadVaults() {
+      const snap = await getDocs(collection(db, "vaults"));
+      vaults = [];
+      snap.forEach(d => vaults.push(d.data()));
     }
 
     async function attemptVault(index) {
@@ -166,19 +147,24 @@
     window.uploadVault = async () => {
       const name = prompt("Vault name");
       const desc = prompt("Description");
-      const flag = prompt("Flag (hashed)");
+      const flag = prompt("Flag");
       const reward = Number(prompt("Gold reward"));
 
       if (!name || !flag || !reward) return;
 
       const flagHash = await sha256(flag);
-      vaults.push({ name, desc, flagHash, reward });
 
-      localStorage.setItem("vaults", JSON.stringify(vaults));
+      await setDoc(doc(db, "vaults", name), {
+        name,
+        desc,
+        flagHash,
+        reward
+      });
 
       userData.uploaded = true;
       await updateDoc(doc(db, "users", currentUser.uid), { uploaded: true });
 
+      await loadVaults();
       renderVaults();
     };
 
