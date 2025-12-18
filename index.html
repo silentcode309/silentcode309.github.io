@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VaultCTF</title>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    /* ======================
+       CONFIGURATION
+       ====================== */
+
+    const firebaseConfig = {
+      apiKey: "REPLACE_ME",
+      authDomain: "REPLACE_ME.firebaseapp.com",
+      projectId: "REPLACE_ME",
+      appId: "REPLACE_ME"
+    };
+
+    /* ======================
+       INIT
+       ====================== */
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    /* ======================
+       STATE
+       ====================== */
+
+    let vaults = JSON.parse(localStorage.getItem("vaults") || "[]");
+    let gold = 0;
+    let cracked = 0;
+
+    const vaultContainer = document.getElementById("vaults");
+
+    /* ======================
+       AUTH FLOW
+       ====================== */
+
+    async function authPrompt() {
+      const mode = prompt("Type 'login' or 'register'");
+      if (!mode) return;
+
+      const email = prompt("Email");
+      const password = prompt("Password (min 6 chars)");
+
+      try {
+        if (mode === "register") {
+          await createUserWithEmailAndPassword(auth, email, password);
+        } else {
+          await signInWithEmailAndPassword(auth, email, password);
+        }
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    onAuthStateChanged(auth, user => {
+      if (!user) {
+        document.getElementById("authStatus").textContent = "Not logged in";
+        authPrompt();
+      } else {
+        document.getElementById("authStatus").textContent = user.email;
+        renderVaults();
+      }
+    });
+
+    /* ======================
+       VAULT LOGIC
+       ====================== */
+
+    function renderVaults() {
+      vaultContainer.innerHTML = "";
+
+      if (vaults.length === 0) {
+        vaultContainer.innerHTML = "<p class='muted'>No vaults uploaded. Upload one to begin.</p>";
+        return;
+      }
+
+      vaults.forEach((v, i) => {
+        const el = document.createElement("div");
+        el.className = "vault";
+        el.innerHTML = `
+          <h3>${v.name}</h3>
+          <p>${v.desc}</p>
+          <button>Infiltrate</button>
+        `;
+
+        el.querySelector("button").onclick = () => attemptVault(i);
+        vaultContainer.appendChild(el);
+      });
+    }
+
+    function attemptVault(index) {
+      const input = prompt("Submit flag");
+      if (input === vaults[index].flag) {
+        alert("Vault cracked");
+        gold += vaults[index].reward;
+        cracked++;
+        document.getElementById("gold").textContent = gold;
+        document.getElementById("cracked").textContent = cracked;
+      } else {
+        alert("Incorrect flag");
+      }
+    }
+
+    /* ======================
+       ADMIN: UPLOAD VAULT
+       ====================== */
+
+    window.uploadVault = () => {
+      const name = prompt("Vault name");
+      const desc = prompt("Description");
+      const flag = prompt("Flag");
+      const reward = Number(prompt("Gold reward"));
+
+      if (!name || !flag || !reward) return;
+
+      vaults.push({ name, desc, flag, reward });
+      localStorage.setItem("vaults", JSON.stringify(vaults));
+      renderVaults();
+    };
+
+    window.logout = async () => {
+      await signOut(auth);
+      location.reload();
+    };
+  </script>
+
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121826;
+      --accent: #f5c542;
+      --text: #e6e9ef;
+      --muted: #9aa4b2;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: radial-gradient(circle at top, #141a2b, var(--bg));
+      color: var(--text);
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid #1f263d;
+      background: #0b0f14;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: calc(100vh - 64px);
+    }
+
+    aside {
+      background: var(--panel);
+      padding: 16px;
+      border-right: 1px solid #1f263d;
+    }
+
+    .vault-grid {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 20px;
+    }
+
+    .vault {
+      background: linear-gradient(180deg, #161d33, #0e1322);
+      border: 1px solid #252c4a;
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    button {
+      margin-top: 10px;
+      width: 100%;
+      padding: 8px;
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>VaultCTF</strong>
+    <div>
+      <span id="authStatus">Loading...</span> |
+      Gold: <span id="gold">0</span> |
+      Cracked: <span id="cracked">0</span>
+      <button onclick="logout()" style="width:auto;margin-left:10px">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <h3>Admin</h3>
+      <button onclick="uploadVault()">Upload Vault</button>
+      <p class="muted">You must upload at least one vault before anyone can play.</p>
+    </aside>
+
+    <section class="vault-grid" id="vaults"></section>
+  </main>
+</body>
+</html>
