@@ -8,29 +8,23 @@
   <!-- Firebase SDKs -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     /* ======================
-       CONFIGURATION
+       FIREBASE CONFIG
        ====================== */
 
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyDg3D0E_-jroFn979TlCLSrgcGpP_887BQ",
-    authDomain: "vaultctf.firebaseapp.com",
-    projectId: "vaultctf",
-    storageBucket: "vaultctf.firebasestorage.app",
-    messagingSenderId: "589839331076",
-    appId: "1:589839331076:web:584266b7d17956c26b2a51",
-    measurementId: "G-XMCZ80Q8Z5"
-  };
-
-    /* ======================
-       INIT
-       ====================== */
+    const firebaseConfig = {
+      apiKey: "REPLACE_ME",
+      authDomain: "REPLACE_ME.firebaseapp.com",
+      projectId: "REPLACE_ME",
+      appId: "REPLACE_ME"
+    };
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+    const db = getFirestore(app);
 
     /* ======================
        STATE
@@ -39,50 +33,82 @@
     let vaults = JSON.parse(localStorage.getItem("vaults") || "[]");
     let gold = 0;
     let cracked = 0;
+    let currentUser = null;
 
     const vaultContainer = document.getElementById("vaults");
+    const leaderboardContainer = document.getElementById("leaderboard");
 
     /* ======================
-       AUTH FLOW
+       UTIL: HASH FLAG
+       ====================== */
+
+    async function sha256(text) {
+      const data = new TextEncoder().encode(text);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    /* ======================
+       AUTH (USERNAME-ONLY)
        ====================== */
 
     async function authPrompt() {
       const mode = prompt("Type 'login' or 'register'");
       if (!mode) return;
 
-      const email = prompt("Email");
+      const username = prompt("Username");
       const password = prompt("Password (min 6 chars)");
+      const fakeEmail = `${username}@vaultctf.local`;
 
       try {
         if (mode === "register") {
-          await createUserWithEmailAndPassword(auth, email, password);
+          const cred = await createUserWithEmailAndPassword(auth, fakeEmail, password);
+          await updateProfile(cred.user, { displayName: username });
+          await setDoc(doc(db, "users", cred.user.uid), {
+            username,
+            gold: 0,
+            cracked: 0
+          });
         } else {
-          await signInWithEmailAndPassword(auth, email, password);
+          await signInWithEmailAndPassword(auth, fakeEmail, password);
         }
       } catch (err) {
         alert(err.message);
       }
     }
 
-    onAuthStateChanged(auth, user => {
+    onAuthStateChanged(auth, async user => {
       if (!user) {
         document.getElementById("authStatus").textContent = "Not logged in";
         authPrompt();
       } else {
-        document.getElementById("authStatus").textContent = user.email;
+        currentUser = user;
+        document.getElementById("authStatus").textContent = user.displayName;
+
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          gold = snap.data().gold;
+          cracked = snap.data().cracked;
+          document.getElementById("gold").textContent = gold;
+          document.getElementById("cracked").textContent = cracked;
+        }
+
         renderVaults();
+        loadLeaderboard();
       }
     });
 
     /* ======================
-       VAULT LOGIC
+       VAULT LOGIC (HASHED FLAGS)
        ====================== */
 
     function renderVaults() {
       vaultContainer.innerHTML = "";
 
       if (vaults.length === 0) {
-        vaultContainer.innerHTML = "<p class='muted'>No vaults uploaded. Upload one to begin.</p>";
+        vaultContainer.innerHTML = "<p class='muted'>No vaults uploaded.</p>";
         return;
       }
 
@@ -100,35 +126,62 @@
       });
     }
 
-    function attemptVault(index) {
+    async function attemptVault(index) {
       const input = prompt("Submit flag");
-      if (input === vaults[index].flag) {
+      const hash = await sha256(input);
+
+      if (hash === vaults[index].flagHash) {
         alert("Vault cracked");
         gold += vaults[index].reward;
         cracked++;
+
         document.getElementById("gold").textContent = gold;
         document.getElementById("cracked").textContent = cracked;
+
+        await updateDoc(doc(db, "users", currentUser.uid), { gold, cracked });
+        loadLeaderboard();
       } else {
         alert("Incorrect flag");
       }
     }
 
     /* ======================
-       ADMIN: UPLOAD VAULT
+       ADMIN: UPLOAD VAULT (HASHED)
        ====================== */
 
-    window.uploadVault = () => {
+    window.uploadVault = async () => {
       const name = prompt("Vault name");
       const desc = prompt("Description");
-      const flag = prompt("Flag");
+      const flag = prompt("Flag (will be hashed)");
       const reward = Number(prompt("Gold reward"));
 
       if (!name || !flag || !reward) return;
 
-      vaults.push({ name, desc, flag, reward });
+      const flagHash = await sha256(flag);
+
+      vaults.push({ name, desc, flagHash, reward });
       localStorage.setItem("vaults", JSON.stringify(vaults));
       renderVaults();
     };
+
+    /* ======================
+       LEADERBOARD
+       ====================== */
+
+    async function loadLeaderboard() {
+      leaderboardContainer.innerHTML = "";
+      const snap = await getDocs(collection(db, "users"));
+      const users = [];
+
+      snap.forEach(d => users.push(d.data()));
+      users.sort((a, b) => b.gold - a.gold);
+
+      users.forEach((u, i) => {
+        const row = document.createElement("div");
+        row.textContent = `${i + 1}. ${u.username} — ${u.gold} gold`;
+        leaderboardContainer.appendChild(row);
+      });
+    }
 
     window.logout = async () => {
       await signOut(auth);
@@ -162,7 +215,7 @@
 
     main {
       display: grid;
-      grid-template-columns: 260px 1fr;
+      grid-template-columns: 240px 1fr 260px;
       min-height: calc(100vh - 64px);
     }
 
@@ -197,9 +250,7 @@
       cursor: pointer;
     }
 
-    .muted {
-      color: var(--muted);
-    }
+    .muted { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -217,10 +268,15 @@
     <aside>
       <h3>Admin</h3>
       <button onclick="uploadVault()">Upload Vault</button>
-      <p class="muted">You must upload at least one vault before anyone can play.</p>
+      <p class="muted">Flags are SHA-256 hashed.</p>
     </aside>
 
     <section class="vault-grid" id="vaults"></section>
+
+    <aside>
+      <h3>Leaderboard</h3>
+      <div id="leaderboard" class="muted"></div>
+    </aside>
   </main>
 </body>
 </html>
